@@ -5,8 +5,10 @@ let queue = [];
 let currentIndex = 0;
 let selectedChoice = null;
 let checked = false;
+let activeSet = null;
 
 const dashboard = document.getElementById("dashboard");
+const setOverview = document.getElementById("setOverview");
 const quiz = document.getElementById("quiz");
 
 function saveProgress() {
@@ -39,21 +41,30 @@ function renderDashboard() {
       <div class="stat"><span>오답 경험</span><strong>${s.wrong}</strong></div>
       <div class="stat"><span>미풀이</span><strong>${s.unattempted}</strong></div>
     </div>
+
     <div class="progress-wrap">
       <div class="progress-row"><span>전체 진행률</span><strong>${rate}%</strong></div>
-      <div class="progress"><div style="width:${rate}%"></div></div>
+      <div class="runner-track">
+        <div class="runner-fill" style="width:${rate}%"></div>
+        <div class="runner-character" style="left:min(calc(${rate}% - 18px), calc(100% - 40px))">🐰</div>
+        <div class="runner-goal">🏁</div>
+      </div>
     </div>
+
     <div class="actions">
       <button class="action-btn" onclick="startQuiz('all')">전체 문제 풀기</button>
       <button class="action-btn secondary" onclick="startQuiz('wrong')">오답만 풀기</button>
       <button class="action-btn secondary" onclick="startQuiz('unattempted')">미풀이만 풀기</button>
     </div>
+
     <h2>회차별 학습</h2>
+    <p class="section-guide">회차를 누르면 1번부터 100번까지 한눈에 확인할 수 있어요.</p>
     <div class="sets">
       ${sets.map(set => {
-        const count = questions.filter(q => q.set === set).length;
-        const solved = questions.filter(q => q.set === set && progress[q.id]).length;
-        return `<button class="set-btn" onclick='startSet(${JSON.stringify(set)})'><strong>${set}</strong><span>${solved} / ${count} 풀이</span></button>`;
+        const setQuestions = questions.filter(q => q.set === set);
+        const count = setQuestions.length;
+        const solved = setQuestions.filter(q => progress[q.id]).length;
+        return `<button class="set-btn" onclick='openSet(${JSON.stringify(set)})'><strong>${set}</strong><span>${solved} / ${count} 풀이</span><em>문제 목록 보기 →</em></button>`;
       }).join("")}
     </div>
   `;
@@ -72,14 +83,72 @@ function startQuiz(mode) {
   showQuiz();
 }
 
+function openSet(set) {
+  activeSet = set;
+  dashboard.classList.add("hidden");
+  quiz.classList.add("hidden");
+  setOverview.classList.remove("hidden");
+  renderSetOverview();
+}
+
+function renderSetOverview() {
+  const setQuestions = questions
+    .filter(q => q.set === activeSet)
+    .sort((a, b) => a.number - b.number);
+
+  const byNumber = new Map(setQuestions.map(q => [q.number, q]));
+  const solved = setQuestions.filter(q => progress[q.id]).length;
+  const correct = setQuestions.filter(q => progress[q.id]?.lastResult === true).length;
+  const wrong = setQuestions.filter(q => progress[q.id]?.everWrong === true).length;
+
+  setOverview.innerHTML = `
+    <div class="set-overview-top">
+      <div>
+        <button class="back-link" onclick="goHome()">← 메인으로</button>
+        <h2>${activeSet}</h2>
+        <p>${solved}문제 풀이 · ${correct}문제 정답 · ${wrong}문제 오답 경험</p>
+      </div>
+      <button class="primary" onclick='startSet(${JSON.stringify(activeSet)})'>이 회차 처음부터 풀기</button>
+    </div>
+
+    <div class="status-legend">
+      <span><i class="dot unattempted"></i>미풀이</span>
+      <span><i class="dot correct"></i>최근 정답</span>
+      <span><i class="dot wrong"></i>오답 경험</span>
+    </div>
+
+    <div class="number-grid">
+      ${Array.from({ length: 100 }, (_, i) => i + 1).map(num => {
+        const q = byNumber.get(num);
+        if (!q) return `<button class="number-btn unavailable" disabled>${num}</button>`;
+        const p = progress[q.id];
+        let statusClass = "unattempted";
+        if (p?.everWrong) statusClass = "wrong";
+        if (p?.lastResult === true && !p?.everWrong) statusClass = "correct";
+        if (p?.lastResult === true && p?.everWrong) statusClass = "reviewed";
+        return `<button class="number-btn ${statusClass}" onclick='openQuestionFromSet(${JSON.stringify(activeSet)}, ${num})'>${num}</button>`;
+      }).join("")}
+    </div>
+  `;
+}
+
+function openQuestionFromSet(set, number) {
+  queue = questions.filter(q => q.set === set).sort((a, b) => a.number - b.number);
+  const idx = queue.findIndex(q => q.number === number);
+  if (idx < 0) return;
+  currentIndex = idx;
+  showQuiz();
+}
+
 function startSet(set) {
-  queue = questions.filter(q => q.set === set);
+  queue = questions.filter(q => q.set === set).sort((a, b) => a.number - b.number);
   currentIndex = 0;
   showQuiz();
 }
 
 function showQuiz() {
   dashboard.classList.add("hidden");
+  setOverview.classList.add("hidden");
   quiz.classList.remove("hidden");
   renderQuestion();
 }
@@ -93,9 +162,9 @@ function renderQuestion() {
       <div class="badges"><span class="badge">${q.set}</span><span class="badge">${q.subject}</span></div>
       <div class="question-number">${currentIndex + 1} / ${queue.length}</div>
     </div>
-    <div class="question">${q.number}번. ${q.question}</div>
+    <div class="question"><span class="question-no">${q.number}</span><span>${q.question}</span></div>
     <div class="choices">
-      ${q.choices.map((choice, i) => `<button class="choice" data-choice="${i + 1}" onclick="selectChoice(${i + 1})">${i + 1}. ${choice}</button>`).join("")}
+      ${q.choices.map((choice, i) => `<button class="choice" data-choice="${i + 1}" onclick="selectChoice(${i + 1})"><span class="choice-number">${i + 1}</span><span class="choice-text">${choice}</span></button>`).join("")}
     </div>
     <div id="feedback"></div>
     <div class="quiz-actions">
@@ -168,6 +237,7 @@ function nextQuestion() {
 
 function goHome() {
   quiz.classList.add("hidden");
+  setOverview.classList.add("hidden");
   dashboard.classList.remove("hidden");
   renderDashboard();
 }
