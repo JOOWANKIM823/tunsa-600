@@ -78,6 +78,10 @@ function mergeQuestionLists(baseList, extraList) {
   return [...map.values()];
 }
 
+function getLoadedCount(set) {
+  return questions.filter(q => q.set === set).length;
+}
+
 function normalizeImportedQuestion(q, index) {
   const setAliases = {
     "1회": "모의고사 1회",
@@ -136,8 +140,16 @@ async function importQuestionFile(event) {
       try { await navigator.storage.persist(); } catch (_) {}
     }
 
+    const importedSetCounts = normalized.reduce((acc, q) => {
+      acc[q.set] = (acc[q.set] || 0) + 1;
+      return acc;
+    }, {});
+    const importedSummary = Object.entries(importedSetCounts)
+      .map(([set, count]) => `${set} ${count}문제`)
+      .join(" · ");
+
     renderDashboard();
-    alert(`${normalized.length}문제를 불러왔습니다.\n이 브라우저에 자동 저장되어 다음에 다시 들어와도 그대로 유지됩니다.`);
+    alert(`${importedSummary}를 불러왔습니다.\n이 브라우저에 자동 저장되어 다음에 다시 들어와도 그대로 유지됩니다.`);
   } catch (error) {
     alert(`문제 파일을 불러오지 못했습니다.\n${error.message}`);
   } finally {
@@ -213,6 +225,7 @@ function stats() {
 function renderDashboard() {
   const s = stats();
   const rate = s.total ? Math.round((s.attempted / s.total) * 100) : 0;
+  const mock4Loaded = getLoadedCount("모의고사 4회");
 
   dashboard.innerHTML = `
     <div class="stats">
@@ -225,6 +238,17 @@ function renderDashboard() {
     <div class="data-status-row">
       <div class="data-status">현재 등록된 문제 <strong>${s.loaded}</strong> / ${s.total}</div>
       <div class="auto-save-badge">☁️ 문제·학습기록 자동저장 ON</div>
+    </div>
+
+    <div class="mock4-connect ${mock4Loaded === 100 ? "complete" : ""}">
+      <div class="mock4-copy">
+        <span class="mock4-icon">${mock4Loaded === 100 ? "✅" : "📦"}</span>
+        <div>
+          <strong>모의고사 4회 데이터</strong>
+          <span>${mock4Loaded === 100 ? "100문제 연결 완료 · 다음 방문부터 자동 로드됩니다." : `${mock4Loaded}/100문제 등록 · 받은 JSON 파일을 한 번만 불러오면 됩니다.`}</span>
+        </div>
+      </div>
+      ${mock4Loaded === 100 ? `<button class="connect-done" onclick='openSet("모의고사 4회")'>4회 문제 보기 →</button>` : `<button class="connect-btn" onclick="document.getElementById('questionImport').click()">4회 JSON 연결하기</button>`}
     </div>
 
     <div class="data-tools">
